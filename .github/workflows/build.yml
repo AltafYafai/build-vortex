@@ -15,14 +15,12 @@ on:
         type: string
       KERNEL_VERSION:
         type: string
-      STATUS:
-        type: string
 
   workflow_dispatch:
     inputs:
       TODO:
         description: To do
-        default: ""
+        default: "kernel"
         type: choice
         options:
           - "kernel"
@@ -35,7 +33,8 @@ on:
         options:
           - "no"
           - "yes"
-          - "resukisu"
+          - "vortexsu" # Updated from resukisu to vortexsu
+
       KSU_SUSFS:
         description: Include SUSFS?
         default: "false"
@@ -77,14 +76,12 @@ jobs:
 
       - name: Determine Build Status
         run: |
-          # Jika STATUS dikirim dari workflow luar (release.yml), gunakan itu
-          if [ -n "${{ inputs.STATUS }}" ]; then
-            echo "STATUS=${{ inputs.STATUS }}" >> $GITHUB_ENV
-          # Logika Default (Jika tidak dikirim, cek trigger manual/otomatis)
-          elif [ "${{ toJson(github.event.inputs) }}" == "null" ]; then
+          if [ "${{ toJson(github.event.inputs) }}" == "null" ]; then
             echo "STATUS=RELEASE" >> $GITHUB_ENV
+            echo "TRIGGER=workflow_call" >> $GITHUB_ENV
           else
             echo "STATUS=BETA" >> $GITHUB_ENV
+            echo "TRIGGER=workflow_dispatch" >> $GITHUB_ENV
           fi
 
       - name: Validate Inputs and Secrets
@@ -113,16 +110,16 @@ jobs:
             _error "Missing GH_TOKEN secret (GitHub PAT)"
           fi
 
-          # KernelSU Validation (Supports yes, no, resukisu)
+          # KernelSU Validation
           if [[ $KSU == "no" && $KSU_SUSFS == "true" ]]; then
               _error "Cannot use SuSFS without KernelSU"
           fi
           if [[ $KSU == "no" && $KSU_MANUAL_HOOK == "true" ]]; then
             _error "Cannot use KSU Manual Hooks without KernelSU!"
           fi
-          # ReSukiSU membutuhkan SUSFS aktif untuk patch kompatibilitas 6.1/6.6
-          if [[ $KSU == "resukisu" && $KSU_SUSFS != "true" ]]; then
-              _error "ReSukiSU build requires KSU_SUSFS to be true"
+          # VorteXSU requires SUSFS active for standard patching logic (6.1/6.6)
+          if [[ $KSU == "vortexsu" && $KSU_SUSFS != "true" ]]; then
+              _error "VorteXSU build requires KSU_SUSFS to be true"
           fi
 
           if [[ $ret -gt 0 ]]; then
@@ -135,18 +132,6 @@ jobs:
           sudo apt-get install -y gh bc bison flex libssl-dev libelf-dev dwarves cpio
           pip install lxml
 
-#     - name: Enable swap with high priority and swappiness
-#       run: |
-#         sudo swapoff -a
-#         sudo fallocate -l 12G /swapfile
-#         sudo chmod 600 /swapfile
-#         sudo mkswap /swapfile
-#         sudo swapon /swapfile --priority 100
-#         sudo sysctl vm.swappiness=100
-#         free -h
-#         echo
-#         swapon --show
-
       - name: Run Build Script
         env:
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }} # telegram chat id
@@ -157,7 +142,6 @@ jobs:
           KSU_MANUAL_HOOK: ${{ inputs.KSU_MANUAL_HOOK }}
           LAST_BUILD: ${{ inputs.LAST_BUILD }}
           TODO: ${{ inputs.TODO }}
-          STATUS: ${{ env.STATUS }} # Mengambil nilai dari step Determine Build Status
           KVER: ${{ inputs.KERNEL_VERSION }} # This passes the version to the script
         run: |
           export GIT_CLONE_PROTECTION_ACTIVE=false
