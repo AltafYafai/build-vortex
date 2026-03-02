@@ -13,7 +13,7 @@ fi
 KERNEL_NAME="ThunderBlast"
 USER="Altaf"
 HOST="Altaf"
-TIMEZONE="Asia/Jakarta"
+TIMEZONE="Asia/Kolkata"
 ANYKERNEL_REPO="https://github.com/Kingfinik98/AnyKernel3"
 
 # Fixed Logic: 5.10 & 6.1 use gki_defconfig, others use quartix_defconfig
