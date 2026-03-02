@@ -10,9 +10,9 @@ elif [ "$KVER" == "6.1" ]; then
   RELEASE="v0.1"
 fi
 
-KERNEL_NAME="VorteXSU"
-USER="VorteX"
-HOST="VorteX"
+KERNEL_NAME="ThunderBlast"
+USER="Altaf"
+HOST="Altaf"
 TIMEZONE="Asia/Jakarta"
 ANYKERNEL_REPO="https://github.com/Kingfinik98/AnyKernel3"
 
