@@ -28,7 +28,7 @@ on:
 
       KSU:
         description: KernelSU Type
-        default: "yes"
+        default: "vortexsu"
         type: choice
         options:
           - "no"
@@ -37,7 +37,7 @@ on:
 
       KSU_SUSFS:
         description: Include SUSFS?
-        default: "false"
+        default: "true"
         type: choice
         options:
           - "true"
@@ -45,7 +45,7 @@ on:
 
       KSU_MANUAL_HOOK:
         description: Use KSU Manual Hooks?
-        default: "false"
+        default: "true"
         type: choice
         options:
           - "true"
@@ -53,7 +53,7 @@ on:
 
       KERNEL_VERSION:
         description: Which kernel version do you want to build?
-        default: ""
+        default: "5.10"
         type: choice
         options:
           - "6.6"
