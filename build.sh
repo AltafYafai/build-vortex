@@ -86,7 +86,7 @@ fi
 
 # --- PATCH 500HZ (INSTALLED AT THE BEGINNING) ---
 log "Applying 500Hz patch..."
-wget -qO Inject_500hz.sh https://raw.githubusercontent.com/Kingfinik98/gki-builder/refs/heads/6.x/inject_ksu/Inject_500hz.sh
+wget -qO Inject_500hz.sh https://raw.githubusercontent.com/AltafYafai/gki-builder/refs/heads/6.x/inject_ksu/Inject_500hz.sh
 bash Inject_500hz.sh
 rm Inject_500hz.sh
 #--------------------------------------
@@ -95,7 +95,7 @@ rm Inject_500hz.sh
 log "Injecting custom KSU & SuSFS configs from GitHub..."
 export KSU
 export KSU_SUSFS
-wget -qO inject.sh https://raw.githubusercontent.com/Kingfinik98/gki-builder/refs/heads/6.x/inject_ksu/gki_defconfig.sh
+wget -qO inject.sh https://raw.githubusercontent.com/AltafYafai/gki-builder/refs/heads/6.x/inject_ksu/gki_defconfig.sh
 bash inject.sh
 rm inject.sh
 # --------------------------------------
