@@ -183,15 +183,14 @@ if ksu_included; then
     log "Official KernelSU setup done."
 
   # ── KernelSU-Next + SuSFS (pershoot/KernelSU-Next, dev-susfs branch) ─────
-  # pershoot's dev-susfs branch has SuSFS FULLY pre-integrated into the driver.
-  # Latest development branch — more up to date than next-susfs.
-  # No manual cp fs/susfs.c into driver needed, no config stripping issues.
+  # pershoot dev-susfs: SuSFS v2.1.0 fully integrated, ABI matches simonpunk.
+  # supercalls.c passes void __user** to susfs functions — same as simonpunk v2.1.0.
   elif [ "$KSU" == "next" ]; then
     if susfs_included; then
-      log "Setting up KernelSU-Next+SuSFS (pershoot dev-susfs — fully pre-integrated)..."
+      log "Setting up KernelSU-Next+SuSFS (pershoot dev-susfs)..."
       curl -LSs "https://raw.githubusercontent.com/pershoot/KernelSU-Next/refs/heads/dev-susfs/kernel/setup.sh" | bash -s dev-susfs
     else
-      log "Setting up KernelSU-Next (KernelSU-Next/KernelSU-Next stable — no SuSFS)..."
+      log "Setting up KernelSU-Next (KernelSU-Next/KernelSU-Next, stable — no SuSFS)..."
       curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -s stable
     fi
     config --enable CONFIG_KSU
@@ -202,8 +201,7 @@ if ksu_included; then
 fi
 
 # ── SuSFS kernel-side patches (simonpunk/susfs4ksu) ──────────────────────────
-# pershoot next-susfs: driver already ships susfs.c + prctl routing built-in.
-# Only need: cp include/ headers + 50_add_susfs to hook kernel/fs files.
+# KernelSU-Next stable + simonpunk v2.1.0 — proven combination.
 # tiann (kernelsu): no SuSFS support.
 if susfs_included && [ "$KSU" == "next" ]; then
   log "Applying SuSFS kernel-side patches (simonpunk/susfs4ksu, latest branch)..."
@@ -219,23 +217,9 @@ if susfs_included && [ "$KSU" == "next" ]; then
 
   git clone --depth=1 -q https://gitlab.com/simonpunk/susfs4ksu -b "$SUSFS_BRANCH" "$SUSFS_DIR"
 
-  # IMPORTANT: pershoot dev-susfs driver ships its own susfs.c + susfs.h inside
-  # KernelSU-Next/kernel/. simonpunk's v2.1.0 has different function signatures
-  # (void __user **) vs pershoot's API (struct-typed pointers) — ABI mismatch!
-  # Fix: copy pershoot's own susfs.c + susfs.h from the driver to kernel tree.
-  # The driver dir is at KernelSU-Next/ (setup.sh clones to kernel root).
-  PERSHOOT_DRIVER="KernelSU-Next/kernel"
-  if [ -f "$PERSHOOT_DRIVER/susfs.c" ]; then
-    log "Using pershoot driver's susfs.c + susfs.h (ABI-compatible)..."
-    cp "$PERSHOOT_DRIVER/susfs.c"         ./fs/susfs.c
-    cp "$PERSHOOT_DRIVER/susfs.h"         ./include/linux/susfs.h 2>/dev/null || true
-    # Copy any additional susfs headers from driver
-    find "$PERSHOOT_DRIVER" -name "susfs*.h" -exec cp {} ./include/linux/ \; 2>/dev/null || true
-  else
-    log "⚠️  pershoot susfs.c not found in driver, falling back to simonpunk's..."
-    cp -R "$SUSFS_PATCHES/fs/"*      ./fs/
-    cp -R "$SUSFS_PATCHES/include/"* ./include/
-  fi
+  # Copy fs/susfs.c + include/ headers, then apply 50_add_susfs kernel hooks.
+  cp -R "$SUSFS_PATCHES/fs/"*      ./fs/
+  cp -R "$SUSFS_PATCHES/include/"* ./include/
   patch -p1 < "$SUSFS_PATCHES/50_add_susfs_in_${SUSFS_BRANCH}.patch" || true
 
   # Per-version kernel compatibility fixups
@@ -256,7 +240,7 @@ if susfs_included && [ "$KSU" == "next" ]; then
     # and susfs_uname_is_active() — these helpers are built into the driver,
     # not in fs/susfs.c at kernel root. Patch is not needed and will fail
     # trying to find fs/susfs.c. Skip entirely.
-    log "[✓] pershoot next-susfs: susfs helpers built into driver — skipping patch."
+    log "[✓] pershoot dev-susfs: susfs uname helpers in susfs.c — skipping standalone patch."
   fi
 
   # statfs CRC symbol mismatch fix for GKI 6.x kernels
@@ -272,20 +256,17 @@ if susfs_included && [ "$KSU" == "next" ]; then
   fi
 
   SUSFS_VERSION=$(grep -E '^#define SUSFS_VERSION' ./include/linux/susfs.h | cut -d' ' -f3 | sed 's/"//g')
+  # Configs match pershoot dev-susfs Kconfig exactly
   config --enable CONFIG_KSU_SUSFS
-  config --enable CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT
   config --enable CONFIG_KSU_SUSFS_SUS_PATH
   config --enable CONFIG_KSU_SUSFS_SUS_MOUNT
   config --enable CONFIG_KSU_SUSFS_SUS_KSTAT
-  config --enable CONFIG_KSU_SUSFS_SUS_KSTAT_SPOOF_GENERIC
-  config --enable CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT
-  config --enable CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT
-  config --enable CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSTAT
   config --enable CONFIG_KSU_SUSFS_SPOOF_UNAME
   config --enable CONFIG_KSU_SUSFS_ENABLE_LOG
   config --enable CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
   config --enable CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
   config --enable CONFIG_KSU_SUSFS_OPEN_REDIRECT
+  config --enable CONFIG_KSU_SUSFS_SUS_MAP
   log "[✓] SuSFS $SUSFS_VERSION patched and configured."
 else
   config --disable CONFIG_KSU_SUSFS
@@ -389,20 +370,17 @@ fi
 # into the final .config that the compiler sees. No more olddefconfig after this.
 if susfs_included && [ "$KSU" == "next" ]; then
   log "Re-pinning SuSFS configs post-olddefconfig..."
+  # Re-pin: match pershoot dev-susfs Kconfig exactly
   $KSRC/scripts/config --file $OUTDIR/.config --enable CONFIG_KSU_SUSFS
-  $KSRC/scripts/config --file $OUTDIR/.config --enable CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT
   $KSRC/scripts/config --file $OUTDIR/.config --enable CONFIG_KSU_SUSFS_SUS_PATH
   $KSRC/scripts/config --file $OUTDIR/.config --enable CONFIG_KSU_SUSFS_SUS_MOUNT
   $KSRC/scripts/config --file $OUTDIR/.config --enable CONFIG_KSU_SUSFS_SUS_KSTAT
-  $KSRC/scripts/config --file $OUTDIR/.config --enable CONFIG_KSU_SUSFS_SUS_KSTAT_SPOOF_GENERIC
-  $KSRC/scripts/config --file $OUTDIR/.config --enable CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT
-  $KSRC/scripts/config --file $OUTDIR/.config --enable CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT
-  $KSRC/scripts/config --file $OUTDIR/.config --enable CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSTAT
   $KSRC/scripts/config --file $OUTDIR/.config --enable CONFIG_KSU_SUSFS_SPOOF_UNAME
   $KSRC/scripts/config --file $OUTDIR/.config --enable CONFIG_KSU_SUSFS_ENABLE_LOG
   $KSRC/scripts/config --file $OUTDIR/.config --enable CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
   $KSRC/scripts/config --file $OUTDIR/.config --enable CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
   $KSRC/scripts/config --file $OUTDIR/.config --enable CONFIG_KSU_SUSFS_OPEN_REDIRECT
+  $KSRC/scripts/config --file $OUTDIR/.config --enable CONFIG_KSU_SUSFS_SUS_MAP
   log "[✓] SuSFS configs locked in .config — will compile into kernel"
 fi
 
