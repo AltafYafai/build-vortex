@@ -98,11 +98,11 @@ cd $WORKDIR
 # Set Kernel variant
 log "Setting Kernel variant..."
 case "$KSU" in
-  "kernelsu") VARIANT="KSU-Official" ;;
+  "kernelsu") VARIANT="KSU" ;;
   "next")     VARIANT="KSU-Next" ;;
-  "no")       VARIANT="VNL" ;;
+  "no")       VARIANT="Vanilla" ;;
 esac
-# Append +SuSFS suffix when SUSFS is enabled (applies to all KSU variants)
+# Append +SuSFS suffix — shows in KernelSU app kernel version string
 susfs_included && VARIANT+="+SuSFS"
 
 # Replace Placeholder in zip name
@@ -331,16 +331,18 @@ else
   KMI_CHECK="$WORKDIR/py/kmi-check-5.x.py"
 fi
 
+
 text=$(
   cat << EOF
-🐧 *Linux Version*: $LINUX_VERSION
-📅 *Build Date*: $KBUILD_BUILD_TIMESTAMP
-📛 *Root*: $VARIANT
-ඞ *SuSFS*: $(susfs_included && ksu_included && echo "$SUSFS_VERSION" || echo "None")
+⚡ *SuvoKernel — Redmi 12 5G (sky)*
+🐧 *Linux*: $LINUX_VERSION
+🔐 *Root*: $VARIANT
+🕵️ *SuSFS*: $(susfs_included && ksu_included && echo "$SUSFS_VERSION" || echo "None")
 🔰 *Compiler*: $COMPILER_STRING
+📅 *Built*: $KBUILD_BUILD_TIMESTAMP
+✨ KernelSU + SuSFS integrated | No Traces | Optimized
 EOF
 )
-
 ## Build GKI
 log "Generating config..."
 make ${MAKE_ARGS[@]} $KERNEL_DEFCONFIG
@@ -426,13 +428,13 @@ if [ $STATUS == "BETA" ]; then
   AK3_ZIP_NAME=${AK3_ZIP_NAME//BUILD_DATE/$BUILD_DATE}
   AK3_ZIP_NAME=${AK3_ZIP_NAME//-REL/}
   sed -i \
-    "s/kernel.string=.*/kernel.string=${KERNEL_NAME} ${LINUX_VERSION} (${BUILD_DATE}) ${VARIANT}/g" \
+    "s/kernel.string=.*/kernel.string=${KERNEL_NAME} | ${VARIANT} | ${LINUX_VERSION} | No Traces/g" \
     $WORKDIR/anykernel/anykernel.sh
 else
   AK3_ZIP_NAME=${AK3_ZIP_NAME//-BUILD_DATE/}
   AK3_ZIP_NAME=${AK3_ZIP_NAME//REL/$RELEASE}
   sed -i \
-    "s/kernel.string=.*/kernel.string=${KERNEL_NAME} ${RELEASE} ${LINUX_VERSION} ${VARIANT}/g" \
+    "s/kernel.string=.*/kernel.string=${KERNEL_NAME} ${RELEASE} | ${VARIANT} | ${LINUX_VERSION} | No Traces/g" \
     $WORKDIR/anykernel/anykernel.sh
 fi
 

@@ -64,23 +64,46 @@ else
   echo "🔧 Mode: Vanilla (no root) — skipping KSU config injection"
 fi
 
-# ── Universal Performance Tuning ────────────────────────────────────────────
-echo "⚙️  Adding Universal Performance Tuning"
+# ── SuvoKernel Optimizations ────────────────────────────────────────────────
+echo "⚙️  Adding SuvoKernel Optimizations"
 cat >> $DEFCONFIG <<EOF
-# Universal Performance Tuning
+# ── Timer Frequency ──────────────────────────────────────────────
 CONFIG_HZ_500=y
 CONFIG_HZ=500
-CONFIG_TMPFS_XATTR=y
-CONFIG_TMPFS_POSIX_ACL=y
-CONFIG_IP_NF_TARGET_TTL=y
+
+# ── Network: BBR + FQ ────────────────────────────────────────────
 CONFIG_TCP_CONG_ADVANCED=y
 CONFIG_TCP_CONG_BBR=y
 CONFIG_NET_SCH_FQ=y
 CONFIG_DEFAULT_BBR=y
+CONFIG_IP_NF_TARGET_TTL=y
+
+# ── CPU & Frequency ──────────────────────────────────────────────
 CONFIG_CPU_FREQ=y
-CONFIG_SWAP=y
 CONFIG_CPU_FREQ_GOV_SCHEDUTIL=y
 CONFIG_CPU_FREQ_GOV_ONDEMAND=y
+CONFIG_CPU_FREQ_GOV_PERFORMANCE=y
+
+# ── I/O Scheduler ────────────────────────────────────────────────
+CONFIG_IOSCHED_BFQ=y
+CONFIG_BFQ_GROUP_IOSCHED=y
+CONFIG_DEFAULT_BFQ=y
+
+# ── Memory ───────────────────────────────────────────────────────
+CONFIG_SWAP=y
+CONFIG_ZRAM=y
+CONFIG_ZRAM_WRITEBACK=y
+CONFIG_ZSMALLOC=y
+CONFIG_ZSMALLOC_STAT=y
+
+# ── Filesystem ───────────────────────────────────────────────────
+CONFIG_TMPFS_XATTR=y
+CONFIG_TMPFS_POSIX_ACL=y
+
+# ── Security: No traces ──────────────────────────────────────────
+# KernelSU + SuSFS integrated — hides all root traces
+CONFIG_SECURITY=y
+CONFIG_LSM="lockdown,yama,loadpin,safesetid,selinux,bpf"
 EOF
 
 # ── LTO — 5.10 only ─────────────────────────────────────────────────────────
