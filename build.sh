@@ -10,9 +10,9 @@ elif [ "$KVER" == "6.1" ]; then
   RELEASE="v0.1"
 fi
 
-KERNEL_NAME="ThunderBlast"
-USER="Altaf"
-HOST="Altaf"
+KERNEL_NAME="SuvoKernel"
+USER="Suvojeet"
+HOST="suvojeet-sengupta"
 TIMEZONE="Asia/Kolkata"
 ANYKERNEL_REPO="https://github.com/Kingfinik98/AnyKernel3"
 
@@ -34,12 +34,18 @@ elif [ "$KVER" == "6.1" ]; then
   ANYKERNEL_BRANCH="master"
   KERNEL_BRANCH="android14-6.1-staging"
 elif [ "$KVER" == "5.10" ]; then
-  KERNEL_REPO="https://github.com/ramabondanp/android_kernel_common-5.10.git"
+  KERNEL_REPO="https://github.com/suvojeet-sengupta/kernel_xiaomi_sky.git"
   ANYKERNEL_BRANCH="master"
-  KERNEL_BRANCH="android12-5.10-staging"
+  KERNEL_BRANCH="lineage-23.1"
 fi
-DEFCONFIG_TO_MERGE=""
-GKI_RELEASES_REPO="https://github.com/AltafYafai/build-vortex"
+# sky (5.10): merge vendor configs so hardware_info.ko gets built,
+# which exports set_tpinfo_gki needed by FT8720 and NT36672C touchscreen drivers.
+if [ "$KVER" == "5.10" ]; then
+  DEFCONFIG_TO_MERGE="arch/arm64/configs/vendor/sky_GKI.config"
+else
+  DEFCONFIG_TO_MERGE=""
+fi
+GKI_RELEASES_REPO="https://github.com/suvojeet-sengupta/build-vortex"
 #Change the clang by removing the (#) sign then apply
 #CLANG_URL="https://github.com/linastorvaldz/idk/releases/download/clang-r547379/clang.tgz"
 #CLANG_URL="https://github.com/LineageOS/android_prebuilts_clang_kernel_linux-x86_clang-r416183b/archive/refs/heads/lineage-20.0.tar.gz"
@@ -76,39 +82,27 @@ LINUX_VERSION=$(make kernelversion)
 LINUX_VERSION_CODE=${LINUX_VERSION//./}
 DEFCONFIG_FILE=$(find ./arch/arm64/configs -name "$KERNEL_DEFCONFIG")
 
-# --- PATCH INFINIX GT 20 PRO CAM (GKI 5.10 ONLY) ---
-if [ "$KVER" == "5.10" ]; then
-  log "📸 Applying Infinix GT 20 Pro Camera Fix..."
-  curl -L "https://github.com/ramabondanp/android_kernel_common-5.10/commit/4fe04b60009e.patch" -o infinix_cam.patch
-  patch -p1 < infinix_cam.patch || log "Camera patch already embedded."
-  rm infinix_cam.patch
-fi
-# ----------------------------------------------------
-
 # --- PATCH 500HZ (INSTALLED AT THE BEGINNING) ---
 log "Applying 500Hz patch..."
-wget -qO Inject_500hz.sh https://raw.githubusercontent.com/AltafYafai/gki-builder/refs/heads/6.x/inject_ksu/Inject_500hz.sh
-bash Inject_500hz.sh
-rm Inject_500hz.sh
+bash $WORKDIR/inject_ksu/Inject_500hz.sh
 #--------------------------------------
 
 # --- ADD KSU INJECT SCRIPT ---
-log "Injecting custom KSU & SuSFS configs from GitHub..."
+log "Injecting custom KSU & SuSFS configs..."
 export KSU
 export KSU_SUSFS
-wget -qO inject.sh https://raw.githubusercontent.com/AltafYafai/gki-builder/refs/heads/6.x/inject_ksu/gki_defconfig.sh
-bash inject.sh
-rm inject.sh
+bash $WORKDIR/inject_ksu/gki_defconfig.sh
 # --------------------------------------
 cd $WORKDIR
 
 # Set Kernel variant
 log "Setting Kernel variant..."
 case "$KSU" in
-  "yes") VARIANT="KSU" ;;
-  "vortexsu") VARIANT="VorteXSU" ;; # Changed resukisu to vortexsu
-  "no") VARIANT="VNL" ;;
+  "kernelsu") VARIANT="KSU-Official" ;;
+  "next")     VARIANT="KSU-Next" ;;
+  "no")       VARIANT="VNL" ;;
 esac
+# Append +SuSFS suffix when SUSFS is enabled (applies to all KSU variants)
 susfs_included && VARIANT+="+SuSFS"
 
 # Replace Placeholder in zip name
@@ -163,138 +157,145 @@ cd $KSRC
 
 ## KernelSU setup
 if ksu_included; then
-  # Remove existing KernelSU drivers
+  # Remove any pre-existing KernelSU driver trees to avoid conflicts
   for KSU_PATH in drivers/staging/kernelsu drivers/kernelsu KernelSU KernelSU-Next; do
-    if [ -d $KSU_PATH ]; then
-      log "KernelSU driver found in $KSU_PATH, Removing..."
+    if [ -d "$KSU_PATH" ]; then
+      log "Stale KernelSU driver found in $KSU_PATH — removing..."
       KSU_DIR=$(dirname "$KSU_PATH")
-
-      [ -f "$KSU_DIR/Kconfig" ] && sed -i '/kernelsu/d' $KSU_DIR/Kconfig
-      [ -f "$KSU_DIR/Makefile" ] && sed -i '/kernelsu/d' $KSU_DIR/Makefile
-
-      rm -rf $KSU_PATH
+      [ -f "$KSU_DIR/Kconfig" ]  && sed -i '/kernelsu/Id' "$KSU_DIR/Kconfig"
+      [ -f "$KSU_DIR/Makefile" ] && sed -i '/kernelsu/Id' "$KSU_DIR/Makefile"
+      rm -rf "$KSU_PATH"
     fi
   done
 
-  install_ksu 'pershoot/KernelSU-Next' 'dev-susfs'
-  config --enable CONFIG_KSU
+  # ── Official KernelSU (tiann/KernelSU) ──────────────────────────────────
+  # Normal install — latest main. No SuSFS support.
+  if [ "$KSU" == "kernelsu" ]; then
+    log "Setting up Official KernelSU (tiann/KernelSU, latest main)..."
+    [ "$KSU_MANUAL_HOOK" == "true" ] && \
+      log "⚠️  KSU_MANUAL_HOOK=true is ignored — tiann/KernelSU is kprobes-only"
+    [ "$KSU_SUSFS" == "true" ] && \
+      log "⚠️  KSU_SUSFS=true is ignored for KSU=kernelsu — use KSU=next for SuSFS support"
+    curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s main
+    config --enable CONFIG_KSU
+    config --enable CONFIG_KPROBES
+    config --enable CONFIG_KPROBE_EVENTS
+    log "Official KernelSU setup done."
 
-  cd KernelSU-Next
-  patch -p1 < $KERNEL_PATCHES/ksu/ksun-add-more-managers-support.patch
-  cd $OLDPWD
-    # Fix SUSFS Uname Symbol Error for KernelSU Next & All_Manager
-    log "Applying fix for undefined SUSFS symbols (KernelSU-Next)..."
-    # Disable SUSFS Uname handling block in supercalls.c to use standard kernel spoofing
-    # This fixes the linker error caused by missing functions in the current SUSFS patch
-    sed -i 's/#ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME/#if 0 \/\* CONFIG_KSU_SUSFS_SPOOF_UNAME Disabled to fix build \*\//' drivers/kernelsu/supercalls.c
-    log "SUSFS symbol fix applied for KernelSU-Next."
-
-# --- VorteXSU Setup Block ---
-elif [ "$KSU" == "vortexsu" ]; then
-  log "Setting up VorteXSU for KVER $KVER..."
-  
-  # Run the VorteXSU setup script (using branch main)
-  log "Running VorteXSU setup from main branch..."
-  curl -LSs "https://raw.githubusercontent.com/Kingfinik98/VortexSU/refs/heads/main/kernel/setup.sh" | bash -s main
-  # PATCH SUSFS for GKI 5.10
-  if [ "$KVER" == "5.10" ]; then
-    log "Applying SUSFS patches for GKI 5.10 (VorteXSU Method)..."
-    SUSFS_BRANCH="gki-android12-5.10"
-    git clone https://gitlab.com/simonpunk/susfs4ksu/ -b $SUSFS_BRANCH sus
-    rm -rf sus/.git
-    susfs=sus/kernel_patches
-    cp -r $susfs/fs .
-    cp -r $susfs/include .
-    cp -r $susfs/50_add_susfs_in_${SUSFS_BRANCH}.patch .
-    patch -p1 < 50_add_susfs_in_${SUSFS_BRANCH}.patch || true
-    # Get SUSFS version for build info
-    SUSFS_VERSION=$(grep -E '^#define SUSFS_VERSION' ./include/linux/susfs.h | cut -d' ' -f3 | sed 's/"//g')
-    config --enable CONFIG_KPM
-    config --enable CONFIG_KSU_MULTI_MANAGER_SUPPORT
-    config --enable CONFIG_KSU_SUSFS
-    log "[✓] VorteXSU & SUSFS patched for $KVER."
-  else
-    # Untuk 6.1 dan 6.6,hanya enable config-nya.
-    # The physical patching is done in the 'Standard SUSFS Logic' block below.
-    config --enable CONFIG_KSU_SUSFS
-    log "SUSFS config enabled for $KVER. Applying patches in Standard block..."
+  # ── KernelSU-Next + SuSFS (pershoot/KernelSU-Next, dev-susfs branch) ─────
+  # pershoot's dev-susfs branch has SuSFS FULLY pre-integrated into the driver.
+  # Latest development branch — more up to date than next-susfs.
+  # No manual cp fs/susfs.c into driver needed, no config stripping issues.
+  elif [ "$KSU" == "next" ]; then
+    if susfs_included; then
+      log "Setting up KernelSU-Next+SuSFS (pershoot dev-susfs — fully pre-integrated)..."
+      curl -LSs "https://raw.githubusercontent.com/pershoot/KernelSU-Next/refs/heads/dev-susfs/kernel/setup.sh" | bash -s dev-susfs
+    else
+      log "Setting up KernelSU-Next (KernelSU-Next/KernelSU-Next stable — no SuSFS)..."
+      curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -s stable
+    fi
+    config --enable CONFIG_KSU
+    config --enable CONFIG_KPROBES
+    config --enable CONFIG_KPROBE_EVENTS
+    log "KernelSU-Next setup done."
   fi
 fi
 
-# SUSFS (Standard Logic for KernelSU yes & VorteXSU 6.1/6.6)
-if susfs_included; then
-  # Check: Run the Standard patch if it is NOT VorteXSU (Standard KernelSU)
-# OR if it is VorteXSU but its version is 6.1 or 6.6.
-  if [ "$KSU" != "vortexsu" ] || ([ "$KSU" == "vortexsu" ] && ([ "$KVER" == "6.1" ] || [ "$KVER" == "6.6" ])); then
-    # Kernel-side
-    log "Applying kernel-side susfs patches (Standard Method)"
-    SUSFS_DIR="$WORKDIR/susfs"
-    SUSFS_PATCHES="${SUSFS_DIR}/kernel_patches"
-    if [ "$KVER" == "6.6" ]; then
-      SUSFS_BRANCH=gki-android15-6.6
-    elif [ "$KVER" == "6.1" ]; then
-      SUSFS_BRANCH=gki-android14-6.1
-    elif [ "$KVER" == "5.10" ]; then
-      SUSFS_BRANCH=gki-android12-5.10
-    fi
-    git clone --depth=1 -q https://gitlab.com/simonpunk/susfs4ksu -b $SUSFS_BRANCH $SUSFS_DIR
-    cp -R $SUSFS_PATCHES/fs/* ./fs
-    cp -R $SUSFS_PATCHES/include/* ./include
-    patch -p1 < $SUSFS_PATCHES/50_add_susfs_in_${SUSFS_BRANCH}.patch || true
-    if [ $(echo "$LINUX_VERSION_CODE" | head -c4) -eq 6630 ]; then
-      patch -p1 < $KERNEL_PATCHES/susfs/namespace.c_fix.patch
-      patch -p1 < $KERNEL_PATCHES/susfs/task_mmu.c_fix.patch
-    elif [ $(echo "$LINUX_VERSION_CODE" | head -c4) -eq 6658 ]; then
-      patch -p1 < $KERNEL_PATCHES/susfs/task_mmu.c_fix-k6.6.58.patch
-    elif [ $(echo "$LINUX_VERSION_CODE" | head -c2) -eq 61 ]; then
-      patch -p1 < $KERNEL_PATCHES/susfs/fs_proc_base.c-fix-k6.1.patch
-    elif [ $(echo "$LINUX_VERSION_CODE" | head -c3) -eq 510 ]; then
-      patch -p1 < $KERNEL_PATCHES/susfs/pershoot-susfs-k5.10.patch
-    fi
-
-    # CRC Fix Logic
-    if [ $(echo "$LINUX_VERSION_CODE" | head -c1) -eq 6 ]; then
-      if [ "$KSU" == "yes" ]; then
-        # KernelSU Next Check specific version
-        if [ "$KVER" == "6.1" ]; then
-          # Khusus GKI 6.1: Gunakan manual fix karena patch bermasalah
-          log "Applying manual statfs CRC fix for KernelSU Next GKI 6.1..."
-          sed -i '/#include <linux\/susfs_def.h>/i #ifndef __GENKSYMS__' fs/statfs.c
-          sed -i '/#include "mount.h"/a #endif' fs/statfs.c
-        else
-          # Versi lain (misal 6.6): Gunakan patch default
-          log "Applying statfs CRC fix patch (KernelSU Next)..."
-          patch -p1 < $KERNEL_PATCHES/susfs/fix-statfs-crc-mismatch-susfs.patch
-        fi
-      elif [ "$KSU" == "vortexsu" ] && [ "$KVER" == "6.1" ]; then
-        # VorteXSU 6.1: Skip patch, apply manual fix
-        log "Applying manual statfs CRC fix for VorteXSU GKI 6.1..."
-        sed -i '/#include <linux\/susfs_def.h>/i #ifndef __GENKSYMS__' fs/statfs.c
-        sed -i '/#include "mount.h"/a #endif' fs/statfs.c
-      fi
-    fi
-
-    SUSFS_VERSION=$(grep -E '^#define SUSFS_VERSION' ./include/linux/susfs.h | cut -d' ' -f3 | sed 's/"//g')
-    config --enable CONFIG_KSU_SUSFS
-  else
-    #  VorteXSU 5.10, SUSFS is enabled in the top block
-    log "Skipping standard SUSFS patch (Handled by VorteXSU or logic elsewhere)."
+# ── SuSFS kernel-side patches (simonpunk/susfs4ksu) ──────────────────────────
+# pershoot next-susfs: driver already ships susfs.c + prctl routing built-in.
+# Only need: cp include/ headers + 50_add_susfs to hook kernel/fs files.
+# tiann (kernelsu): no SuSFS support.
+if susfs_included && [ "$KSU" == "next" ]; then
+  log "Applying SuSFS kernel-side patches (simonpunk/susfs4ksu, latest branch)..."
+  SUSFS_DIR="$WORKDIR/susfs"
+  SUSFS_PATCHES="${SUSFS_DIR}/kernel_patches"
+  if [ "$KVER" == "6.6" ]; then
+    SUSFS_BRANCH="gki-android15-6.6"
+  elif [ "$KVER" == "6.1" ]; then
+    SUSFS_BRANCH="gki-android14-6.1"
+  elif [ "$KVER" == "5.10" ]; then
+    SUSFS_BRANCH="gki-android12-5.10"
   fi
+
+  git clone --depth=1 -q https://gitlab.com/simonpunk/susfs4ksu -b "$SUSFS_BRANCH" "$SUSFS_DIR"
+
+  # pershoot next-susfs ships susfs.c inside the driver (KernelSU-Next/kernel/susfs.c).
+  # BUT 50_add_susfs patch adds "obj-$(CONFIG_KSU_SUSFS) += susfs.o" to fs/Makefile —
+  # which requires fs/susfs.c to exist at kernel root. Copy it from simonpunk's repo.
+  # Also copy include/ headers needed by patched kernel files (fs/open.c etc.).
+  cp -R "$SUSFS_PATCHES/fs/"*      ./fs/
+  cp -R "$SUSFS_PATCHES/include/"* ./include/
+  patch -p1 < "$SUSFS_PATCHES/50_add_susfs_in_${SUSFS_BRANCH}.patch" || true
+
+  # Per-version kernel compatibility fixups
+  LVER_4=$(echo "$LINUX_VERSION_CODE" | head -c4)
+  LVER_3=$(echo "$LINUX_VERSION_CODE" | head -c3)
+  LVER_2=$(echo "$LINUX_VERSION_CODE" | head -c2)
+  LVER_1=$(echo "$LINUX_VERSION_CODE" | head -c1)
+
+  if [ "$LVER_4" -eq 6630 ] 2>/dev/null; then
+    patch -p1 < $KERNEL_PATCHES/susfs/namespace.c_fix.patch
+    patch -p1 < $KERNEL_PATCHES/susfs/task_mmu.c_fix.patch
+  elif [ "$LVER_4" -eq 6658 ] 2>/dev/null; then
+    patch -p1 < $KERNEL_PATCHES/susfs/task_mmu.c_fix-k6.6.58.patch
+  elif [ "$LVER_2" -eq 61 ] 2>/dev/null; then
+    patch -p1 < $KERNEL_PATCHES/susfs/fs_proc_base.c-fix-k6.1.patch
+  elif [ "$LVER_3" -eq 510 ] 2>/dev/null; then
+    # pershoot next-susfs driver already ships susfs_set_uname_from_kernel()
+    # and susfs_uname_is_active() — these helpers are built into the driver,
+    # not in fs/susfs.c at kernel root. Patch is not needed and will fail
+    # trying to find fs/susfs.c. Skip entirely.
+    log "[✓] pershoot next-susfs: susfs helpers built into driver — skipping patch."
+  fi
+
+  # statfs CRC symbol mismatch fix for GKI 6.x kernels
+  if [ "$LVER_1" -eq 6 ] 2>/dev/null; then
+    if [ "$KVER" == "6.1" ]; then
+      log "Applying manual statfs CRC fix for GKI 6.1..."
+      sed -i '/#include <linux\/susfs_def.h>/i #ifndef __GENKSYMS__' fs/statfs.c
+      sed -i '/#include "mount.h"/a #endif' fs/statfs.c
+    else
+      log "Applying statfs CRC fix patch for GKI 6.x..."
+      patch -p1 < $KERNEL_PATCHES/susfs/fix-statfs-crc-mismatch-susfs.patch
+    fi
+  fi
+
+  SUSFS_VERSION=$(grep -E '^#define SUSFS_VERSION' ./include/linux/susfs.h | cut -d' ' -f3 | sed 's/"//g')
+  config --enable CONFIG_KSU_SUSFS
+  config --enable CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT
+  config --enable CONFIG_KSU_SUSFS_SUS_PATH
+  config --enable CONFIG_KSU_SUSFS_SUS_MOUNT
+  config --enable CONFIG_KSU_SUSFS_SUS_KSTAT
+  config --enable CONFIG_KSU_SUSFS_SUS_KSTAT_SPOOF_GENERIC
+  config --enable CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT
+  config --enable CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT
+  config --enable CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSTAT
+  config --enable CONFIG_KSU_SUSFS_SPOOF_UNAME
+  config --enable CONFIG_KSU_SUSFS_ENABLE_LOG
+  config --enable CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
+  config --enable CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
+  config --enable CONFIG_KSU_SUSFS_OPEN_REDIRECT
+  log "[✓] SuSFS $SUSFS_VERSION patched and configured."
 else
   config --disable CONFIG_KSU_SUSFS
 fi
 
-# set localversion
-if [ $TODO == "kernel" ]; then
-  LATEST_COMMIT_HASH=$(git rev-parse --short HEAD)
-  if [ $STATUS == "BETA" ]; then
-    SUFFIX="$LATEST_COMMIT_HASH"
-  else
-    SUFFIX="${RELEASE}@${LATEST_COMMIT_HASH}"
-  fi
-  config --set-str CONFIG_LOCALVERSION "-$KERNEL_NAME/$SUFFIX"
-  config --disable CONFIG_LOCALVERSION_AUTO
-  sed -i 's/echo "+"/# echo "+"/g' scripts/setlocalversion
+# ── Manual Hooks (applied AFTER SuSFS so patches don't conflict) ─────────────
+# SuSFS and manual hooks both touch fs/read_write.c, fs/stat.c, kernel/reboot.c etc.
+# Correct order: KernelSU install → SuSFS patches → Manual hooks
+if ksu_included && [ "$KSU_MANUAL_HOOK" == "true" ] && [ "$KSU" != "kernelsu" ]; then
+  log "Applying manual hook patches (post-SuSFS, KSU=$KSU)..."
+  # SuSFS and manual hooks both touch fs/read_write.c, kernel/reboot.c etc.
+  # kernel/reboot.c is handled exclusively by reboot-hook.patch below —
+  # exclude it from manual-hook-v1.6 to prevent double-patching which causes
+  # ksu_handle_sys_reboot() to land inside SYSCALL_DEFINE4 macro args → compile error.
+  patch -p1 --fuzz=5 --ignore-whitespace \
+    --exclude='kernel/reboot.c' \
+    < $KERNEL_PATCHES/hooks/manual-hook-v1.6.patch || true
+  patch -p1 --fuzz=5 --ignore-whitespace \
+    < $KERNEL_PATCHES/hooks/reboot-hook.patch || true
+  config --enable CONFIG_KSU_MANUAL_HOOK
+  log "[✓] Manual hooks applied."
 fi
 
 # Declare needed variables
@@ -335,8 +336,8 @@ text=$(
   cat << EOF
 🐧 *Linux Version*: $LINUX_VERSION
 📅 *Build Date*: $KBUILD_BUILD_TIMESTAMP
-📛 *KernelSU*: ${KSU}
-ඞ *SuSFS*: $(susfs_included && echo "$SUSFS_VERSION" || echo "None")
+📛 *Root*: $VARIANT
+ඞ *SuSFS*: $(susfs_included && ksu_included && echo "$SUSFS_VERSION" || echo "None")
 🔰 *Compiler*: $COMPILER_STRING
 EOF
 )
@@ -348,13 +349,50 @@ make ${MAKE_ARGS[@]} $KERNEL_DEFCONFIG
 if [ "$DEFCONFIG_TO_MERGE" ]; then
   log "Merging configs..."
   if [ -f "scripts/kconfig/merge_config.sh" ]; then
-    for config in $DEFCONFIG_TO_MERGE; do
-      make ${MAKE_ARGS[@]} scripts/kconfig/merge_config.sh $config
-    done
+    ./scripts/kconfig/merge_config.sh -m -O $OUTDIR $OUTDIR/.config $DEFCONFIG_TO_MERGE
+    make ${MAKE_ARGS[@]} olddefconfig
   else
     error "scripts/kconfig/merge_config.sh does not exist in the kernel source"
   fi
+fi
+
+# set localversion — AFTER merge so sky_GKI.config -gki doesn't override it
+if [ $TODO == "kernel" ]; then
+  LATEST_COMMIT_HASH=$(git rev-parse --short HEAD)
+  if [ $STATUS == "BETA" ]; then
+    SUFFIX="$LATEST_COMMIT_HASH"
+  else
+    SUFFIX="${RELEASE}@${LATEST_COMMIT_HASH}"
+  fi
+  $KSRC/scripts/config --file $OUTDIR/.config --set-str CONFIG_LOCALVERSION "-$KERNEL_NAME-sky/$SUFFIX"
+  $KSRC/scripts/config --file $OUTDIR/.config --disable CONFIG_LOCALVERSION_AUTO
+  sed -i 's/echo "+"/# echo "+"/g' $KSRC/scripts/setlocalversion
   make ${MAKE_ARGS[@]} olddefconfig
+  log "Kernel localversion set to: -$KERNEL_NAME-sky/$SUFFIX"
+fi
+
+# ── Re-apply SuSFS configs AFTER final olddefconfig ──────────────────────────
+# olddefconfig runs twice (after merge_config + after localversion) and can
+# strip CONFIG_KSU_SUSFS_* if Kconfig dependency resolution fails at that point.
+# Re-enabling here — after the very last olddefconfig — guarantees they survive
+# into the final .config that the compiler sees. No more olddefconfig after this.
+if susfs_included && [ "$KSU" == "next" ]; then
+  log "Re-pinning SuSFS configs post-olddefconfig..."
+  $KSRC/scripts/config --file $OUTDIR/.config --enable CONFIG_KSU_SUSFS
+  $KSRC/scripts/config --file $OUTDIR/.config --enable CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT
+  $KSRC/scripts/config --file $OUTDIR/.config --enable CONFIG_KSU_SUSFS_SUS_PATH
+  $KSRC/scripts/config --file $OUTDIR/.config --enable CONFIG_KSU_SUSFS_SUS_MOUNT
+  $KSRC/scripts/config --file $OUTDIR/.config --enable CONFIG_KSU_SUSFS_SUS_KSTAT
+  $KSRC/scripts/config --file $OUTDIR/.config --enable CONFIG_KSU_SUSFS_SUS_KSTAT_SPOOF_GENERIC
+  $KSRC/scripts/config --file $OUTDIR/.config --enable CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT
+  $KSRC/scripts/config --file $OUTDIR/.config --enable CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT
+  $KSRC/scripts/config --file $OUTDIR/.config --enable CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSTAT
+  $KSRC/scripts/config --file $OUTDIR/.config --enable CONFIG_KSU_SUSFS_SPOOF_UNAME
+  $KSRC/scripts/config --file $OUTDIR/.config --enable CONFIG_KSU_SUSFS_ENABLE_LOG
+  $KSRC/scripts/config --file $OUTDIR/.config --enable CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
+  $KSRC/scripts/config --file $OUTDIR/.config --enable CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
+  $KSRC/scripts/config --file $OUTDIR/.config --enable CONFIG_KSU_SUSFS_OPEN_REDIRECT
+  log "[✓] SuSFS configs locked in .config — will compile into kernel"
 fi
 
 # Upload defconfig if we are doing defconfig
@@ -375,30 +413,7 @@ else
   $KMI_CHECK "$KSRC/android/abi_gki_aarch64.xml" "$MODULE_SYMVERS" || true
 fi
 
-# --- PATCH KPM SECTION ---
-log "Applying KPM Patch..."
-if [ "$KSU" == "vortexsu" ]; then
-  # Go to the kernel output directory Image
-  cd $OUTDIR/arch/arm64/boot
-  if [ -f Image ]; then
-    echo "✅ Image found, applying KPM patch..."
-    curl -LSs "https://github.com/Kingfinik98/SukiSU_patch/raw/refs/heads/main/kpm/patch_linux" -o patch
-    chmod 777 patch
-    ./patch
-    if [ -f oImage ]; then
-      mv -f oImage Image
-      ls -lh Image
-      log "✅ KPM Patch applied successfully."
-    else
-      log "Error: oImage not found!"
-    fi
-  else
-    log "Warning: Image file not found in $PWD. Skipping KPM patch."
-  fi
-else
-  log "Skipping KPM patch (Not VorteXSU variant)."
-fi
-# Return to the initial working directory (Post-compiling steps))
+# Return to the initial working directory (Post-compiling steps)
 cd $WORKDIR
 # ----------------------------------------------------
 
@@ -432,13 +447,13 @@ cp $KERNEL_IMAGE .
 zip -r9 $WORKDIR/$AK3_ZIP_NAME ./*
 cd $OLDPWD
 
-if [ $STATUS != "BETA" ]; then
+if [ "${STATUS}" != "BETA" ]; then
   echo "BASE_NAME=$KERNEL_NAME-$VARIANT" >> $GITHUB_ENV
   mkdir -p $WORKDIR/artifacts
   mv $WORKDIR/*.zip $WORKDIR/artifacts
 fi
 
-if [ $LAST_BUILD == "true" ] && [ $STATUS != "BETA" ]; then
+if [ "${LAST_BUILD}" == "true" ] && [ "${STATUS}" != "BETA" ]; then
   (
     echo "LINUX_VERSION=$LINUX_VERSION"
     echo "SUSFS_VERSION=$(curl -s https://gitlab.com/simonpunk/susfs4ksu/raw/gki-android15-6.6/kernel_patches/include/linux/susfs.h | grep -E '^#define SUSFS_VERSION' | cut -d' ' -f3 | sed 's/"//g')"

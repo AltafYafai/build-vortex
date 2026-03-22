@@ -52,13 +52,9 @@ install_ksu() {
 
 # ksu_included() function
 # Type: bool
+# Returns true when any KernelSU variant is selected (kernelsu, next)
 ksu_included() {
-  # LOGIC FIX:
-  # Cek variabel input $KSU secara langsung.
-  # 1. "yes" (Standard KSU) -> Return True (Masuk blok Standard).
-  # 2. "vortexsu" -> Return False (Lewati Standard, masuk blok VorteXSU).
-  # 3. "no" (Vanilla) -> Return False (Tidak ada KSU).
-  [ "$KSU" == "yes" ]
+  [[ "$KSU" == "kernelsu" || "$KSU" == "next" ]]
   return $?
 }
 
@@ -80,7 +76,12 @@ simplify_gh_url() {
 
 # Kernel scripts function
 config() {
-  $KSRC/scripts/config --file $DEFCONFIG_FILE $@
+  # Modify output .config if it exists (post-make), else source defconfig
+  if [ -f "$OUTDIR/.config" ]; then
+    $KSRC/scripts/config --file $OUTDIR/.config $@
+  else
+    $KSRC/scripts/config --file $DEFCONFIG_FILE $@
+  fi
 }
 
 # Logging function
