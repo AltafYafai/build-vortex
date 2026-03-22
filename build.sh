@@ -236,11 +236,12 @@ if susfs_included && [ "$KSU" == "next" ]; then
   elif [ "$LVER_2" -eq 61 ] 2>/dev/null; then
     patch -p1 < $KERNEL_PATCHES/susfs/fs_proc_base.c-fix-k6.1.patch
   elif [ "$LVER_3" -eq 510 ] 2>/dev/null; then
-    # pershoot next-susfs driver already ships susfs_set_uname_from_kernel()
-    # and susfs_uname_is_active() — these helpers are built into the driver,
-    # not in fs/susfs.c at kernel root. Patch is not needed and will fail
-    # trying to find fs/susfs.c. Skip entirely.
-    log "[✓] pershoot dev-susfs: susfs uname helpers in susfs.c — skipping standalone patch."
+    # pershoot dev-susfs supercalls.c references susfs_uname_is_active() and
+    # susfs_set_uname_from_kernel() via extern declarations. These symbols MUST
+    # be exported from fs/susfs.c — linker fails with "undefined symbol" otherwise.
+    # simonpunk's gki-android12-5.10 susfs.c does NOT have them — pershoot patch adds them.
+    log "Applying pershoot susfs uname helpers to fs/susfs.c (required by dev-susfs linker)..."
+    patch -p1 < $KERNEL_PATCHES/susfs/pershoot-susfs-k5.10.patch || true
   fi
 
   # statfs CRC symbol mismatch fix for GKI 6.x kernels
