@@ -238,14 +238,15 @@ if susfs_included && [ "$KSU" == "next" ]; then
   elif [ "$LVER_2" -eq 61 ] 2>/dev/null; then
     patch -p1 < $KERNEL_PATCHES/susfs/fs_proc_base.c-fix-k6.1.patch
   elif [ "$LVER_3" -eq 510 ] 2>/dev/null; then
-    # gki-android12-5.10-dev branch already has susfs_uname_is_active() and
-    # susfs_set_uname_from_kernel() merged — pershoot patch no longer needed.
-    # Guard check in case an older branch is used.
+    # pershoot dev-susfs needs susfs_uname_is_active() + susfs_set_uname_from_kernel()
+    # exported from fs/susfs.c. simonpunk has NOT merged these yet (even dev branch).
+    # Inject them directly before susfs_set_uname() which is always present.
     if grep -q "susfs_uname_is_active" fs/susfs.c 2>/dev/null; then
-      log "[✓] susfs uname helpers already in susfs.c (dev branch) — skipping."
+      log "[✓] susfs uname helpers already in susfs.c — skipping inject."
     else
-      log "Applying pershoot susfs uname helpers patch..."
-      patch -p1 < $KERNEL_PATCHES/susfs/pershoot-susfs-k5.10.patch || true
+      log "Injecting susfs_uname_is_active + susfs_set_uname_from_kernel into fs/susfs.c..."
+      sed -i 's/^void susfs_set_uname(void __user \*\*user_info)/static bool susfs_uname_owner;\n\nbool susfs_uname_is_active(void) { return susfs_uname_owner; }\nEXPORT_SYMBOL_GPL(susfs_uname_is_active);\n\nint susfs_set_uname_from_kernel(const char *release, const char *version) {\n\tunsigned long flags;\n\tspin_lock_irqsave(\&susfs_spin_lock_set_uname, flags);\n\tif (!release || !release[0]) strncpy(my_uname.release, utsname()->release, __NEW_UTS_LEN);\n\telse strncpy(my_uname.release, release, __NEW_UTS_LEN);\n\tif (!version || !version[0]) strncpy(my_uname.version, utsname()->version, __NEW_UTS_LEN);\n\telse strncpy(my_uname.version, version, __NEW_UTS_LEN);\n\tspin_unlock_irqrestore(\&susfs_spin_lock_set_uname, flags);\n\treturn 0;\n}\nEXPORT_SYMBOL_GPL(susfs_set_uname_from_kernel);\n\nvoid susfs_set_uname(void __user **user_info)/' fs/susfs.c
+      log "[✓] susfs uname helpers injected into fs/susfs.c"
     fi
   fi
 
