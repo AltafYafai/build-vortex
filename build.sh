@@ -212,7 +212,7 @@ if susfs_included && [ "$KSU" == "next" ]; then
   elif [ "$KVER" == "6.1" ]; then
     SUSFS_BRANCH="gki-android14-6.1"
   elif [ "$KVER" == "5.10" ]; then
-    SUSFS_BRANCH="gki-android12-5.10"
+    SUSFS_BRANCH="gki-android12-5.10-dev"
   fi
 
   git clone --depth=1 -q https://gitlab.com/simonpunk/susfs4ksu -b "$SUSFS_BRANCH" "$SUSFS_DIR"
@@ -236,12 +236,15 @@ if susfs_included && [ "$KSU" == "next" ]; then
   elif [ "$LVER_2" -eq 61 ] 2>/dev/null; then
     patch -p1 < $KERNEL_PATCHES/susfs/fs_proc_base.c-fix-k6.1.patch
   elif [ "$LVER_3" -eq 510 ] 2>/dev/null; then
-    # pershoot dev-susfs supercalls.c references susfs_uname_is_active() and
-    # susfs_set_uname_from_kernel() via extern declarations. These symbols MUST
-    # be exported from fs/susfs.c — linker fails with "undefined symbol" otherwise.
-    # simonpunk's gki-android12-5.10 susfs.c does NOT have them — pershoot patch adds them.
-    log "Applying pershoot susfs uname helpers to fs/susfs.c (required by dev-susfs linker)..."
-    patch -p1 < $KERNEL_PATCHES/susfs/pershoot-susfs-k5.10.patch || true
+    # gki-android12-5.10-dev branch already has susfs_uname_is_active() and
+    # susfs_set_uname_from_kernel() merged — pershoot patch no longer needed.
+    # Guard check in case an older branch is used.
+    if grep -q "susfs_uname_is_active" fs/susfs.c 2>/dev/null; then
+      log "[✓] susfs uname helpers already in susfs.c (dev branch) — skipping."
+    else
+      log "Applying pershoot susfs uname helpers patch..."
+      patch -p1 < $KERNEL_PATCHES/susfs/pershoot-susfs-k5.10.patch || true
+    fi
   fi
 
   # statfs CRC symbol mismatch fix for GKI 6.x kernels
