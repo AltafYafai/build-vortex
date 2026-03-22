@@ -220,7 +220,9 @@ if susfs_included && [ "$KSU" == "next" ]; then
   # Copy fs/susfs.c + include/ headers, then apply 50_add_susfs kernel hooks.
   cp -R "$SUSFS_PATCHES/fs/"*      ./fs/
   cp -R "$SUSFS_PATCHES/include/"* ./include/
-  patch -p1 < "$SUSFS_PATCHES/50_add_susfs_in_${SUSFS_BRANCH}.patch" || true
+  # Patch filename uses base branch name without -dev suffix
+  SUSFS_PATCH_BRANCH="${SUSFS_BRANCH%-dev}"
+  patch -p1 < "$SUSFS_PATCHES/50_add_susfs_in_${SUSFS_PATCH_BRANCH}.patch" || true
 
   # Per-version kernel compatibility fixups
   LVER_4=$(echo "$LINUX_VERSION_CODE" | head -c4)
