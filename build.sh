@@ -219,12 +219,23 @@ if susfs_included && [ "$KSU" == "next" ]; then
 
   git clone --depth=1 -q https://gitlab.com/simonpunk/susfs4ksu -b "$SUSFS_BRANCH" "$SUSFS_DIR"
 
-  # pershoot next-susfs ships susfs.c inside the driver (KernelSU-Next/kernel/susfs.c).
-  # BUT 50_add_susfs patch adds "obj-$(CONFIG_KSU_SUSFS) += susfs.o" to fs/Makefile —
-  # which requires fs/susfs.c to exist at kernel root. Copy it from simonpunk's repo.
-  # Also copy include/ headers needed by patched kernel files (fs/open.c etc.).
-  cp -R "$SUSFS_PATCHES/fs/"*      ./fs/
-  cp -R "$SUSFS_PATCHES/include/"* ./include/
+  # IMPORTANT: pershoot dev-susfs driver ships its own susfs.c + susfs.h inside
+  # KernelSU-Next/kernel/. simonpunk's v2.1.0 has different function signatures
+  # (void __user **) vs pershoot's API (struct-typed pointers) — ABI mismatch!
+  # Fix: copy pershoot's own susfs.c + susfs.h from the driver to kernel tree.
+  # The driver dir is at KernelSU-Next/ (setup.sh clones to kernel root).
+  PERSHOOT_DRIVER="KernelSU-Next/kernel"
+  if [ -f "$PERSHOOT_DRIVER/susfs.c" ]; then
+    log "Using pershoot driver's susfs.c + susfs.h (ABI-compatible)..."
+    cp "$PERSHOOT_DRIVER/susfs.c"         ./fs/susfs.c
+    cp "$PERSHOOT_DRIVER/susfs.h"         ./include/linux/susfs.h 2>/dev/null || true
+    # Copy any additional susfs headers from driver
+    find "$PERSHOOT_DRIVER" -name "susfs*.h" -exec cp {} ./include/linux/ \; 2>/dev/null || true
+  else
+    log "⚠️  pershoot susfs.c not found in driver, falling back to simonpunk's..."
+    cp -R "$SUSFS_PATCHES/fs/"*      ./fs/
+    cp -R "$SUSFS_PATCHES/include/"* ./include/
+  fi
   patch -p1 < "$SUSFS_PATCHES/50_add_susfs_in_${SUSFS_BRANCH}.patch" || true
 
   # Per-version kernel compatibility fixups
