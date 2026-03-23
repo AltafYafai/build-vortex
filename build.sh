@@ -285,6 +285,15 @@ if susfs_included && [ "$KSU" == "next" ]; then
   config --enable CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
   config --enable CONFIG_KSU_SUSFS_OPEN_REDIRECT
   config --enable CONFIG_KSU_SUSFS_SUS_MAP
+  # ── Deprecated in susfs v2.x — explicitly removed from Kconfig ───────────
+  # These existed in susfs v1.x and must be explicitly disabled so they never
+  # appear as undefined or accidentally enabled in the final .config.
+  config --disable CONFIG_KSU_SUSFS_TRY_UMOUNT
+  config --disable CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT
+  config --disable CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT
+  config --disable CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT
+  config --disable CONFIG_KSU_SUSFS_MAGIC_MOUNT
+  config --disable CONFIG_KSU_SUSFS_OVERLAYFS_AUTO_KSTAT
   log "[✓] SuSFS $SUSFS_VERSION patched and configured."
 else
   config --disable CONFIG_KSU_SUSFS
@@ -388,6 +397,13 @@ if susfs_included && [ "$KSU" == "next" ]; then
   $KSRC/scripts/config --file $OUTDIR/.config --enable CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
   $KSRC/scripts/config --file $OUTDIR/.config --enable CONFIG_KSU_SUSFS_OPEN_REDIRECT
   $KSRC/scripts/config --file $OUTDIR/.config --enable CONFIG_KSU_SUSFS_SUS_MAP
+  # ── Deprecated in susfs v2.x — pin as disabled post-olddefconfig too ─────
+  $KSRC/scripts/config --file $OUTDIR/.config --disable CONFIG_KSU_SUSFS_TRY_UMOUNT
+  $KSRC/scripts/config --file $OUTDIR/.config --disable CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT
+  $KSRC/scripts/config --file $OUTDIR/.config --disable CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT
+  $KSRC/scripts/config --file $OUTDIR/.config --disable CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT
+  $KSRC/scripts/config --file $OUTDIR/.config --disable CONFIG_KSU_SUSFS_MAGIC_MOUNT
+  $KSRC/scripts/config --file $OUTDIR/.config --disable CONFIG_KSU_SUSFS_OVERLAYFS_AUTO_KSTAT
   log "[✓] SuSFS configs locked in .config — will compile into kernel"
 fi
 
