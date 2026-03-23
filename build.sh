@@ -330,19 +330,6 @@ if [ $(echo "$LINUX_VERSION_CODE" | head -c1) -eq 6 ]; then
 else
   KMI_CHECK="$WORKDIR/py/kmi-check-5.x.py"
 fi
-
-
-text=$(
-  cat << EOF
-⚡ *SuvoKernel — Redmi 12 5G (sky)*
-🐧 *Linux*: $LINUX_VERSION
-🔐 *Root*: $VARIANT
-🕵️ *SuSFS*: $(susfs_included && ksu_included && echo "$SUSFS_VERSION" || echo "None")
-🔰 *Compiler*: $COMPILER_STRING
-📅 *Built*: $KBUILD_BUILD_TIMESTAMP
-✨ KernelSU + SuSFS integrated | No Traces | Optimized
-EOF
-)
 ## Build GKI
 log "Generating config..."
 make ${MAKE_ARGS[@]} $KERNEL_DEFCONFIG
@@ -392,6 +379,41 @@ if susfs_included && [ "$KSU" == "next" ]; then
   $KSRC/scripts/config --file $OUTDIR/.config --enable CONFIG_KSU_SUSFS_SUS_MAP
   log "[✓] SuSFS configs locked in .config — will compile into kernel"
 fi
+
+# ── Enforce Full LTO (GKI-compliant; required for CFI_CLANG) ─────────────────
+# gki_defconfig already sets LTO_CLANG_FULL, but we pin it explicitly here
+# to guarantee it survives all config merge passes and is never silently
+# downgraded to Thin or disabled.
+$KSRC/scripts/config --file $OUTDIR/.config --disable CONFIG_LTO_NONE
+$KSRC/scripts/config --file $OUTDIR/.config --disable CONFIG_LTO_CLANG_THIN
+$KSRC/scripts/config --file $OUTDIR/.config --enable  CONFIG_LTO_CLANG
+$KSRC/scripts/config --file $OUTDIR/.config --enable  CONFIG_LTO_CLANG_FULL
+log "[✓] LTO mode pinned to Full LTO (whole-program optimisation + CFI)"
+
+# ── Detect final LTO mode for build notification ──────────────────────────────
+if grep -q "^CONFIG_LTO_CLANG_THIN=y" "$OUTDIR/.config"; then
+  LTO_MODE="Thin LTO (LLVM)"
+elif grep -q "^CONFIG_LTO_CLANG_FULL=y" "$OUTDIR/.config"; then
+  LTO_MODE="Full LTO (LLVM, whole-program)"
+else
+  LTO_MODE="Disabled"
+fi
+
+# ── Telegram build notification message ───────────────────────────────────────
+text=$(
+  cat << EOF
+*SuvoKernel — Redmi 12 5G (sky)*
+
+*Kernel Version:* $LINUX_VERSION
+*Root Solution:* $VARIANT
+*SuSFS:* $(susfs_included && ksu_included && echo "$SUSFS_VERSION" || echo "None")
+*Link-Time Optimisation:* $LTO_MODE
+*Compiler:* $COMPILER_STRING
+*Build Date:* $KBUILD_BUILD_TIMESTAMP
+
+GKI-compliant build | CFI enabled | No Traces
+EOF
+)
 
 # Upload defconfig if we are doing defconfig
 if [ $TODO == "defconfig" ]; then
@@ -464,7 +486,7 @@ if [ $STATUS == "BETA" ]; then
   upload_file "$WORKDIR/$AK3_ZIP_NAME" "$text"
   upload_file "$WORKDIR/build.log"
 else
-  send_msg "✅ Build Succeeded for $VARIANT variant."
+  send_msg "Build completed successfully for $VARIANT variant. LTO: $LTO_MODE."
 fi
 
 exit 0
