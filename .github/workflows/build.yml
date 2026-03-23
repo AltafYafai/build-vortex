@@ -86,6 +86,7 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 90  # Full build (Thin LTO) takes ~40–60 min; 90 min gives headroom without silently hanging for 6 hours
 
     steps:
       - name: Checkout source
@@ -162,9 +163,8 @@ jobs:
       - name: Maximise disk and create swap for Full LTO
         run: |
           # GitHub Actions ubuntu-latest: 7 GB RAM, ~30 GB free disk
-          # Full LTO link on a 5.10 kernel needs ~14 GB RAM.
-          # We free up disk by removing unused toolchains/packages, then
-          # allocate a 10 GB swapfile so the linker does not get OOM-killed.
+          # Full LTO link on a 5.10 kernel needs ~14–18 GB RAM.
+          # 7 GB RAM + 14 GB swap = 21 GB virtual — enough headroom for the linker.
 
           # -- Free up disk space (recovers ~20 GB) --
           sudo rm -rf /usr/local/lib/android \
@@ -179,14 +179,18 @@ jobs:
                       /usr/share/doc \
                       /usr/share/man || true
 
-          # -- Create 10 GB swapfile --
-          # fallocate fails on some runner fs types ("Text file busy");
-          # dd is universally safe.
+          # -- Create 14 GB swapfile (was 10 GB — bumped for Full LTO link) --
+          # dd is universally safe; fallocate fails on some runner fs types.
           sudo swapoff -a || true
-          sudo dd if=/dev/zero of=/mnt/swapfile bs=1M count=10240 status=progress
+          sudo dd if=/dev/zero of=/mnt/swapfile bs=1M count=14336 status=progress
           sudo chmod 600 /mnt/swapfile
           sudo mkswap /mnt/swapfile
           sudo swapon /mnt/swapfile
+
+          # Tune swappiness: use swap aggressively so LTO linker
+          # doesn't get OOM-killed when it needs memory fast.
+          sudo sysctl -w vm.swappiness=80
+
           echo "Swap enabled:"
           free -h
 
