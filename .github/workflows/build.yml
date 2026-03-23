@@ -180,10 +180,13 @@ jobs:
                       /usr/share/man || true
 
           # -- Create 10 GB swapfile --
-          sudo fallocate -l 10G /swapfile
-          sudo chmod 600 /swapfile
-          sudo mkswap /swapfile
-          sudo swapon /swapfile
+          # fallocate fails on some runner fs types ("Text file busy");
+          # dd is universally safe.
+          sudo swapoff -a || true
+          sudo dd if=/dev/zero of=/mnt/swapfile bs=1M count=10240 status=progress
+          sudo chmod 600 /mnt/swapfile
+          sudo mkswap /mnt/swapfile
+          sudo swapon /mnt/swapfile
           echo "Swap enabled:"
           free -h
 
