@@ -157,47 +157,58 @@ cd $KSRC
 
 ## KernelSU setup
 if ksu_included; then
-  # Remove any pre-existing KernelSU driver trees to avoid conflicts
-  for KSU_PATH in drivers/staging/kernelsu drivers/kernelsu KernelSU KernelSU-Next; do
-    if [ -d "$KSU_PATH" ]; then
-      log "Stale KernelSU driver found in $KSU_PATH — removing..."
-      KSU_DIR=$(dirname "$KSU_PATH")
-      [ -f "$KSU_DIR/Kconfig" ]  && sed -i '/kernelsu/Id' "$KSU_DIR/Kconfig"
-      [ -f "$KSU_DIR/Makefile" ] && sed -i '/kernelsu/Id' "$KSU_DIR/Makefile"
-      rm -rf "$KSU_PATH"
-    fi
-  done
 
-  # ── Official KernelSU (tiann/KernelSU) ──────────────────────────────────
-  # Normal install — latest main. No SuSFS support.
-  if [ "$KSU" == "kernelsu" ]; then
-    log "Setting up Official KernelSU (tiann/KernelSU, latest main)..."
-    [ "$KSU_MANUAL_HOOK" == "true" ] && \
-      log "⚠️  KSU_MANUAL_HOOK=true is ignored — tiann/KernelSU is kprobes-only"
-    [ "$KSU_SUSFS" == "true" ] && \
-      log "⚠️  KSU_SUSFS=true is ignored for KSU=kernelsu — use KSU=next for SuSFS support"
-    curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s main
-    config --enable CONFIG_KSU
-    config --enable CONFIG_KPROBES
-    config --enable CONFIG_KPROBE_EVENTS
-    log "Official KernelSU setup done."
-
-  # ── KernelSU-Next + SuSFS (pershoot/KernelSU-Next, dev-susfs branch) ─────
-  # pershoot dev-susfs: SuSFS v2.1.0 fully integrated, ABI matches simonpunk.
-  # supercalls.c passes void __user** to susfs functions — same as simonpunk v2.1.0.
-  elif [ "$KSU" == "next" ]; then
-    if susfs_included; then
-      log "Setting up KernelSU-Next+SuSFS (pershoot dev-susfs)..."
-      curl -LSs "https://raw.githubusercontent.com/pershoot/KernelSU-Next/refs/heads/dev-susfs/kernel/setup.sh" | bash -s dev-susfs
-    else
-      log "Setting up KernelSU-Next (KernelSU-Next/KernelSU-Next, stable — no SuSFS)..."
-      curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -s stable
-    fi
-    config --enable CONFIG_KSU
-    config --enable CONFIG_KPROBES
-    config --enable CONFIG_KPROBE_EVENTS
-    log "KernelSU-Next setup done."
+  # ── Pre-baked detection ────────────────────────────────────────────────────
+  # If the kernel source already ships the KernelSU driver (committed directly
+  # to the repo), skip the network fetch entirely.  A pre-baked driver must
+  # expose its version via drivers/kernelsu/Makefile (KernelSU-Next) or
+  # drivers/kernelsu/ksu.h (tiann).  We treat presence of the directory AND a
+  # Makefile referencing CONFIG_KSU as the signal.
+  KSU_PREBAKED=false
+  if [ -d "drivers/kernelsu" ] && grep -q "CONFIG_KSU" "drivers/kernelsu/Makefile" 2>/dev/null; then
+    log "✅ Pre-baked KernelSU driver detected in source — skipping network setup."
+    KSU_PREBAKED=true
   fi
+
+  if [ "$KSU_PREBAKED" = false ]; then
+    # Remove any stale KernelSU driver trees to avoid conflicts
+    for KSU_PATH in drivers/staging/kernelsu drivers/kernelsu KernelSU KernelSU-Next; do
+      if [ -d "$KSU_PATH" ]; then
+        log "Stale KernelSU driver found in $KSU_PATH — removing..."
+        KSU_DIR=$(dirname "$KSU_PATH")
+        [ -f "$KSU_DIR/Kconfig" ]  && sed -i '/kernelsu/Id' "$KSU_DIR/Kconfig"
+        [ -f "$KSU_DIR/Makefile" ] && sed -i '/kernelsu/Id' "$KSU_DIR/Makefile"
+        rm -rf "$KSU_PATH"
+      fi
+    done
+
+    # ── Official KernelSU (tiann/KernelSU) ────────────────────────────────
+    if [ "$KSU" == "kernelsu" ]; then
+      log "Setting up Official KernelSU (tiann/KernelSU, latest main)..."
+      [ "$KSU_MANUAL_HOOK" == "true" ] && \
+        log "⚠️  KSU_MANUAL_HOOK=true is ignored — tiann/KernelSU is kprobes-only"
+      [ "$KSU_SUSFS" == "true" ] && \
+        log "⚠️  KSU_SUSFS=true is ignored for KSU=kernelsu — use KSU=next for SuSFS support"
+      curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s main
+      log "Official KernelSU setup done."
+
+    # ── KernelSU-Next (pershoot dev-susfs OR KernelSU-Next/stable) ─────────
+    elif [ "$KSU" == "next" ]; then
+      if susfs_included; then
+        log "Setting up KernelSU-Next+SuSFS (pershoot dev-susfs)..."
+        curl -LSs "https://raw.githubusercontent.com/pershoot/KernelSU-Next/refs/heads/dev-susfs/kernel/setup.sh" | bash -s dev-susfs
+      else
+        log "Setting up KernelSU-Next (KernelSU-Next/KernelSU-Next, stable — no SuSFS)..."
+        curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -s stable
+      fi
+      log "KernelSU-Next setup done."
+    fi
+  fi
+
+  # Enable KSU configs regardless of source (pre-baked or freshly fetched)
+  config --enable CONFIG_KSU
+  config --enable CONFIG_KPROBES
+  config --enable CONFIG_KPROBE_EVENTS
 fi
 
 # ── SuSFS kernel-side patches (simonpunk/susfs4ksu) ──────────────────────────
