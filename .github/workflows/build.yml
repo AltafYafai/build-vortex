@@ -159,6 +159,34 @@ jobs:
           sudo apt-get install -y gh bc bison flex libssl-dev libelf-dev dwarves cpio
           pip install lxml
 
+      - name: Maximise disk and create swap for Full LTO
+        run: |
+          # GitHub Actions ubuntu-latest: 7 GB RAM, ~30 GB free disk
+          # Full LTO link on a 5.10 kernel needs ~14 GB RAM.
+          # We free up disk by removing unused toolchains/packages, then
+          # allocate a 10 GB swapfile so the linker does not get OOM-killed.
+
+          # -- Free up disk space (recovers ~20 GB) --
+          sudo rm -rf /usr/local/lib/android \
+                      /usr/local/share/boost \
+                      /opt/ghc \
+                      /opt/hostedtoolcache/CodeQL \
+                      /usr/share/dotnet \
+                      /usr/share/swift \
+                      /usr/lib/jvm \
+                      /usr/local/.ghcup \
+                      /usr/local/share/powershell \
+                      /usr/share/doc \
+                      /usr/share/man || true
+
+          # -- Create 10 GB swapfile --
+          sudo fallocate -l 10G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          echo "Swap enabled:"
+          free -h
+
       - name: Run Build Script
         env:
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }} # telegram chat id
