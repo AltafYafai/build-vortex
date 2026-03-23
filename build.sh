@@ -391,15 +391,32 @@ if susfs_included && [ "$KSU" == "next" ]; then
   log "[✓] SuSFS configs locked in .config — will compile into kernel"
 fi
 
-# ── Enforce Full LTO (GKI-compliant; required for CFI_CLANG) ─────────────────
-# gki_defconfig already sets LTO_CLANG_FULL, but we pin it explicitly here
-# to guarantee it survives all config merge passes and is never silently
-# downgraded to Thin or disabled.
+# ── Apply LTO mode based on $LTO env variable ────────────────────────────────
+# Passed in from the workflow input (thin | full). Defaults to thin if unset.
+#
+#   thin → Thin LTO  — parallel link, ~3–4 GB RAM, ~2–5 min.
+#                       Used by Google in official GKI builds. CFI fully supported.
+#                       Recommended for CI, testing, and frequent builds.
+#
+#   full → Full LTO  — serial whole-program link, ~14–18 GB RAM, ~15–30 min.
+#                       Marginally better dead-code elimination (~2–4% smaller binary).
+#                       Real-world performance delta on device: negligible.
+#                       Use only for final/release builds on a capable runner.
+#
+# Both modes are GKI-compliant and CFI_CLANG compatible.
+LTO="${LTO:-thin}"
 $KSRC/scripts/config --file $OUTDIR/.config --disable CONFIG_LTO_NONE
-$KSRC/scripts/config --file $OUTDIR/.config --disable CONFIG_LTO_CLANG_THIN
-$KSRC/scripts/config --file $OUTDIR/.config --enable  CONFIG_LTO_CLANG
-$KSRC/scripts/config --file $OUTDIR/.config --enable  CONFIG_LTO_CLANG_FULL
-log "[✓] LTO mode pinned to Full LTO (whole-program optimisation + CFI)"
+if [[ "$LTO" == "full" ]]; then
+  $KSRC/scripts/config --file $OUTDIR/.config --disable CONFIG_LTO_CLANG_THIN
+  $KSRC/scripts/config --file $OUTDIR/.config --enable  CONFIG_LTO_CLANG
+  $KSRC/scripts/config --file $OUTDIR/.config --enable  CONFIG_LTO_CLANG_FULL
+  log "[✓] LTO mode pinned to Full LTO (serial whole-program optimisation + CFI)"
+else
+  $KSRC/scripts/config --file $OUTDIR/.config --disable CONFIG_LTO_CLANG_FULL
+  $KSRC/scripts/config --file $OUTDIR/.config --enable  CONFIG_LTO_CLANG
+  $KSRC/scripts/config --file $OUTDIR/.config --enable  CONFIG_LTO_CLANG_THIN
+  log "[✓] LTO mode pinned to Thin LTO (parallel LLVM link + CFI)"
+fi
 
 # ── Detect final LTO mode for build notification ──────────────────────────────
 if grep -q "^CONFIG_LTO_CLANG_THIN=y" "$OUTDIR/.config"; then
