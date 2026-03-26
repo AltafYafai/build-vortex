@@ -310,8 +310,58 @@ if ksu_included && [ "$KSU_MANUAL_HOOK" == "true" ] && [ "$KSU" != "kernelsu" ];
   # ksu_handle_sys_reboot() to land inside SYSCALL_DEFINE4 macro args → compile error.
   filterdiff -x '*/kernel/reboot.c' $KERNEL_PATCHES/hooks/manual-hook-v1.6.patch \
     | patch -p1 --fuzz=5 --ignore-whitespace || true
-  patch -p1 --fuzz=5 --ignore-whitespace \
-    < $KERNEL_PATCHES/hooks/reboot-hook.patch || true
+  # reboot-hook.patch is intentionally NOT applied via patch(1) — after SuSFS
+  # shifts lines in kernel/reboot.c, --fuzz=5 causes the hunk to land inside
+  # SYSCALL_DEFINE4 macro args instead of the function body → compile error.
+  # Instead, inject directly using a context-aware Python script.
+  python3 - "$KSRC/kernel/reboot.c" <<'PYEOF'
+import sys, re
+
+path = sys.argv[1]
+with open(path, 'r') as f:
+    lines = f.readlines()
+
+EXTERN = '#ifdef CONFIG_KSU\nextern int ksu_handle_sys_reboot(int magic1, int magic2, unsigned int cmd, void __user **arg);\n#endif\n'
+HOOK   = '\t#ifdef CONFIG_KSU\n\t\tksu_handle_sys_reboot(magic1, magic2, cmd, &arg);\n\t#endif\n'
+
+# Idempotency check
+content = ''.join(lines)
+if 'ksu_handle_sys_reboot' in content:
+    print('[reboot-hook] Already injected, skipping.')
+    sys.exit(0)
+
+out = []
+in_reboot_syscall = False
+extern_injected   = False
+hook_injected     = False
+
+for i, line in enumerate(lines):
+    out.append(line)
+
+    # 1) Inject extern declaration right after DEFINE_MUTEX(system_transition_mutex);
+    if not extern_injected and 'DEFINE_MUTEX(system_transition_mutex)' in line:
+        out.append(EXTERN)
+        extern_injected = True
+        continue
+
+    # 2) Detect entry into SYSCALL_DEFINE4(reboot, ...)
+    if 'SYSCALL_DEFINE4(reboot' in line:
+        in_reboot_syscall = True
+
+    # 3) Inside the reboot syscall, inject after "int ret = 0;"
+    if in_reboot_syscall and not hook_injected and re.match(r'\s*int ret\s*=\s*0\s*;', line):
+        out.append(HOOK)
+        hook_injected = True
+        in_reboot_syscall = False  # done
+
+with open(path, 'w') as f:
+    f.writelines(out)
+
+print(f'[reboot-hook] extern_injected={extern_injected}, hook_injected={hook_injected}')
+if not extern_injected or not hook_injected:
+    print('[reboot-hook] WARNING: one or more injection points not found!', file=sys.stderr)
+    sys.exit(1)
+PYEOF
   config --enable CONFIG_KSU_MANUAL_HOOK
   log "[✓] Manual hooks applied."
 fi
